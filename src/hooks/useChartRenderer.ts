@@ -1,87 +1,95 @@
-﻿ "use client";
- import { useEffect, useRef } from "react";
+﻿"use client";
+import { useEffect, useRef } from "react";
 
- type RenderBucket = { t: number; min: number; max: number };
+type RenderBucket = { t: number; min: number; max: number };
 
- export function useChartRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, getRenderData: () => RenderBucket[]) {
-   const rafRef = useRef<number | null>(null);
+/**
+ * Accepts a nullable canvas ref (RefObject<HTMLCanvasElement | null>).
+ * The hook will bail out early if the canvas is not present (server builds / SSR).
+ */
+export function useChartRenderer(
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  getRenderData: () => RenderBucket[]
+) {
+  const rafRef = useRef<number | null>(null);
 
-   useEffect(() => {
-     const canvas = canvasRef.current;
-     if (!canvas) return;
-     const dpr = window.devicePixelRatio || 1;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return; // bail if canvas not mounted (important for SSR / build)
 
-     const setSize = () => {
-       const rect = canvas.getBoundingClientRect();
-       canvas.width = Math.round(rect.width * dpr);
-       canvas.height = Math.round(rect.height * dpr);
-     };
-     setSize();
+    const dpr = window.devicePixelRatio || 1;
 
-     const ctx = canvas.getContext("2d");
-     if (!ctx) return;
+    const setSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+    };
+    setSize();
 
-     ctx.scale(dpr, dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-     let last = performance.now();
+    ctx.scale(dpr, dpr);
 
-     const draw = (ts: number) => {
-       last = ts;
-       const rect = canvas.getBoundingClientRect();
-       const w = rect.width;
-       const h = rect.height;
+    const draw = (ts: number) => {
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
 
-       ctx.clearRect(0, 0, w, h);
+      ctx.clearRect(0, 0, w, h);
 
-       const buckets = getRenderData();
-       if (!buckets || buckets.length === 0) {
-         rafRef.current = requestAnimationFrame(draw);
-         return;
-       }
+      const buckets = getRenderData();
+      if (!buckets || buckets.length === 0) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
 
-       let vMin = Infinity, vMax = -Infinity;
-       for (const b of buckets) {
-         if (b.min < vMin) vMin = b.min;
-         if (b.max > vMax) vMax = b.max;
-       }
-       if (!isFinite(vMin) || !isFinite(vMax)) return;
+      let vMin = Infinity, vMax = -Infinity;
+      for (const b of buckets) {
+        if (b.min < vMin) vMin = b.min;
+        if (b.max > vMax) vMax = b.max;
+      }
+      if (!isFinite(vMin) || !isFinite(vMax)) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
 
-       ctx.beginPath();
-       for (let i = 0; i < buckets.length; i++) {
-         const x = (i / (buckets.length - 1)) * w;
-         const y = h - ((buckets[i].max - vMin) / (vMax - vMin)) * h;
-         if (i === 0) ctx.moveTo(x, y);
-         else ctx.lineTo(x, y);
-       }
-       ctx.lineTo(w, h);
-       ctx.lineTo(0, h);
-       ctx.closePath();
-       ctx.fillStyle = "rgba(30,144,255,0.15)";
-       ctx.fill();
+      ctx.beginPath();
+      for (let i = 0; i < buckets.length; i++) {
+        const x = (i / (buckets.length - 1)) * w;
+        const y = h - ((buckets[i].max - vMin) / (vMax - vMin)) * h;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.lineTo(0, h);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(30,144,255,0.15)";
+      ctx.fill();
 
-       ctx.beginPath();
-       ctx.lineWidth = 1.2;
-       ctx.strokeStyle = "#1e90ff";
-       for (let i = 0; i < buckets.length; i++) {
-         const x = (i / (buckets.length - 1)) * w;
-         const mid = (buckets[i].min + buckets[i].max) / 2;
-         const y = h - ((mid - vMin) / (vMax - vMin)) * h;
-         if (i === 0) ctx.moveTo(x, y);
-         else ctx.lineTo(x, y);
-       }
-       ctx.stroke();
+      ctx.beginPath();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = "#1e90ff";
+      for (let i = 0; i < buckets.length; i++) {
+        const x = (i / (buckets.length - 1)) * w;
+        const mid = (buckets[i].min + buckets[i].max) / 2;
+        const y = h - ((mid - vMin) / (vMax - vMin)) * h;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
 
-       rafRef.current = requestAnimationFrame(draw);
-     };
+      rafRef.current = requestAnimationFrame(draw);
+    };
 
-     rafRef.current = requestAnimationFrame(draw);
+    rafRef.current = requestAnimationFrame(draw);
 
-     const onResize = () => setSize();
-     window.addEventListener("resize", onResize);
+    const onResize = () => setSize();
+    window.addEventListener("resize", onResize);
 
-     return () => {
-       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-       window.removeEventListener("resize", onResize);
-     };
-   }, [canvasRef, getRenderData]);
- }
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [canvasRef, getRenderData]);
+}
